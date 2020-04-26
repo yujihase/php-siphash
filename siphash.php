@@ -193,7 +193,7 @@ if (PHP_INT_SIZE >= 8) {
     // Rotl - Circular left shift
     // ------------------------------
 
-    // Rotl by 16-31 bits
+    // Rotl by 0-15 bits
     private static function rotl0_asgmt(&$a, $n = 0) {
       $m = 16 - $n;
       $a = array(
