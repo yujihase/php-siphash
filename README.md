@@ -33,7 +33,7 @@ echo "{$hash}\n";
 function SipHash::hash(int $length, string $data, string $key, bool $raw_output = false)
 ```
 
-* `$length` ... A length of hash. If you need 64-bit hash, `$length = 8`. If 128-bit hash, `$length = 16`.
-* `$data` ... Data that is hashed.
+* `$length` ... A length of hash. If you need 64-bit hash, `$length = 8`. If 128-bit, `$length = 16`.
+* `$data` ... Data that will be hashed.
 * `$key` ... Hash key. This must be 16 bytes string.
 * `$raw_output` ... If this is true, the function returns binary data which length is `$length`. If false, hexized string. Default is false.
