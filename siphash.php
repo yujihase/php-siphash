@@ -159,7 +159,7 @@ if (PHP_INT_SIZE >= 8) {
 
     // Create 64 bits data
     static function u64($a) {
-      return array($a & 0xffff, ($a >> 16) & 0xffff, ($a >> 32) & 0xffff, ($a >> 48) & 0xffff);
+      return array($a & 0xffff, ($a >> 16) & 0xffff, 0, 0);
     }
 
     // Left shift by 56 bits
