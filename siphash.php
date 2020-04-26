@@ -1,7 +1,7 @@
 <?php
 
 /*!
- * siphash.php v1
+ * siphash.php v1.0.1
  *
  * © 2020 Yuji Hase
  *
