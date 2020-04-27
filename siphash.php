@@ -1,7 +1,7 @@
 <?php
 
 /*!
- * siphash.php v1.0.3
+ * siphash.php v1.0.4
  *
  * © 2020 Yuji Hase
  *
@@ -97,6 +97,8 @@ if (PHP_INT_SIZE == 8 && PHP_VERSION_ID >= 50603) {
       static $c_rounds = 2;
       static $d_rounds = 4;
 
+      // 64-bits int is expressed an array of 24-bits, 24-bits, 16-bits.
+
       $v0 = self::str8_to_u64("\x75\x65\x73\x70\x65\x6d\x6f\x73");
       $v1 = self::str8_to_u64("\x6d\x6f\x64\x6e\x61\x72\x6f\x64");
       $v2 = self::str8_to_u64("\x61\x72\x65\x6e\x65\x67\x79\x6c");
@@ -104,13 +106,13 @@ if (PHP_INT_SIZE == 8 && PHP_VERSION_ID >= 50603) {
 
       $k0 = self::str8_to_u64(substr($key, 0, 8));
       $k1 = self::str8_to_u64(substr($key, 8, 8));
-      self::xor_asgmt($v0, $k0);
-      self::xor_asgmt($v1, $k1);
-      self::xor_asgmt($v2, $k0);
-      self::xor_asgmt($v3, $k1);
+      $v0[0] ^= $k0[0]; $v0[1] ^= $k0[1]; $v0[2] ^= $k0[2];
+      $v1[0] ^= $k1[0]; $v1[1] ^= $k1[1]; $v1[2] ^= $k1[2];
+      $v2[0] ^= $k0[0]; $v2[1] ^= $k0[1]; $v2[2] ^= $k0[2];
+      $v3[0] ^= $k1[0]; $v3[1] ^= $k1[1]; $v3[2] ^= $k1[2];
 
       if ($length == 16) {
-        self::xor_asgmt($v1, self::u64(0xee));
+        $v1[0] ^= 0xee;
       }
 
       $size = strlen($data);
@@ -118,23 +120,23 @@ if (PHP_INT_SIZE == 8 && PHP_VERSION_ID >= 50603) {
 
       for ($ptr = 0; $ptr != $end; $ptr += 8) {
         $m = self::str8_to_u64(substr($data, $ptr, 8));
-        self::xor_asgmt($v3, $m);
+        $v3[0] ^= $m[0]; $v3[1] ^= $m[1]; $v3[2] ^= $m[2];
         self::sipround($v0, $v1, $v2, $v3, $c_rounds);
-        self::xor_asgmt($v0, $m);
+        $v0[0] ^= $m[0]; $v0[1] ^= $m[1]; $v0[2] ^= $m[2];
       }
 
       $m = self::str_to_u64(substr($data, $end));
-      self::or_asgmt($m, self::shl56(self::u64($size)));
-      self::xor_asgmt($v3, $m);
+      $m[2] |= ($size & 0xff) << 8;
+      $v3[0] ^= $m[0]; $v3[1] ^= $m[1]; $v3[2] ^= $m[2];
       self::sipround($v0, $v1, $v2, $v3, $c_rounds);
-      self::xor_asgmt($v0, $m);
+      $v0[0] ^= $m[0]; $v0[1] ^= $m[1]; $v0[2] ^= $m[2];
 
-      self::xor_asgmt($v2, self::u64($length == 16 ? 0xee : 0xff));
+      $v2[0] ^= $length == 16 ? 0xee : 0xff;
       self::sipround($v0, $v1, $v2, $v3, $d_rounds);
       $output = self::output($v0, $v1, $v2, $v3);
 
       if ($length == 16) {
-        self::xor_asgmt($v1, self::u64(0xdd));
+        $v1[0] ^= 0xdd;
         self::sipround($v0, $v1, $v2, $v3, $d_rounds);
         $output .= self::output($v0, $v1, $v2, $v3);
       }
@@ -144,16 +146,21 @@ if (PHP_INT_SIZE == 8 && PHP_VERSION_ID >= 50603) {
 
     // 8 bytes to 64 bits
     private static function str8_to_u64($data) {
-      return array_merge(unpack('v*', $data));
+      $a = unpack('V2', $data);
+      return array(
+        $a[1] & 0xffffff,
+        (($a[1] >> 24) & 0xff) | (($a[2] & 0xffff) << 8),
+        ($a[2] >> 16) & 0xffff,
+      );
     }
 
     // N bytes to 64 bits
     private static function str_to_u64($data) {
       $p = array_merge(unpack('C*', $data));
-      $a = self::u64(0);
+      $a = array(0, 0, 0);
       for ($j = 0; $j < count($a); $j++) {
-        for ($i = 0; $i < min(count($p) - 2 * $j, 2); $i++) {
-          $a[$j] |= $p[$i + 2 * $j] << ($i * 8);
+        for ($i = 0; $i < min(count($p) - 3 * $j, 3); $i++) {
+          $a[$j] |= $p[$i + 3 * $j] << ($i * 8);
         }
       }
       return $a;
@@ -161,93 +168,73 @@ if (PHP_INT_SIZE == 8 && PHP_VERSION_ID >= 50603) {
 
     // output 8 bytes
     private static function output($v0, $v1, $v2, $v3) {
-      return pack('v*',
-        $v0[0] ^ $v1[0] ^ $v2[0] ^ $v3[0],
-        $v0[1] ^ $v1[1] ^ $v2[1] ^ $v3[1],
-        $v0[2] ^ $v1[2] ^ $v2[2] ^ $v3[2],
-        $v0[3] ^ $v1[3] ^ $v2[3] ^ $v3[3]);
+      $a0 = $v0[0] ^ $v1[0] ^ $v2[0] ^ $v3[0];
+      $a1 = $v0[1] ^ $v1[1] ^ $v2[1] ^ $v3[1];
+      $a2 = $v0[2] ^ $v1[2] ^ $v2[2] ^ $v3[2];
+      return pack('V2', $a0 | ($a1 << 24), (($a1 >> 8) & 0xffff) | ($a2 << 16));
     }
 
     private static function sipround(&$v0, &$v1, &$v2, &$v3, $n) {
       for ($i = 0; $i < $n; $i++) {
-        self::add_asgmt($v0, $v1);
-        self::rotl0_asgmt($v1, 13);
-        self::xor_asgmt($v1, $v0);
-        self::rotl32_asgmt($v0);
-        self::add_asgmt($v2, $v3);
-        self::rotl16_asgmt($v3);
-        self::xor_asgmt($v3, $v2);
-        self::add_asgmt($v0, $v3);
-        self::rotl16_asgmt($v3, 5);
-        self::xor_asgmt($v3, $v0);
-        self::add_asgmt($v2, $v1);
-        self::rotl16_asgmt($v1, 1);
-        self::xor_asgmt($v1, $v2);
-        self::rotl32_asgmt($v2);
+        /* v0 += v1 */ {
+          $c0 = $v0[0] + $v1[0];
+          $c1 = $v0[1] + $v1[1] + ($c0 >> 24);
+          $c2 = $v0[2] + $v1[2] + ($c1 >> 24);
+          $v0 = array($c0 & 0xffffff, $c1 & 0xffffff, $c2 & 0xffff);
+        }
+        /* Rotl by 13 bits */ $v1 = array(
+          ($v1[2] >> 3) | (($v1[0] & 0x7ff) << 13),
+          ($v1[0] >> 11) | (($v1[1] & 0x7ff) << 13),
+          ($v1[1] >> 11) | (($v1[2] & 0x7) << 13),
+        );
+        /* v1 ^= v0 */ $v1[0] ^= $v0[0]; $v1[1] ^= $v0[1]; $v1[2] ^= $v0[2];
+        /* Rotl by 32 bits */ $v0 = array(
+          ($v0[1] >> 8) | (($v0[2] & 0xff) << 16),
+          ($v0[2] >> 8) | (($v0[0] & 0xffff) << 8),
+          ($v0[0] >> 16) | (($v0[1] & 0xff) << 8),
+        );
+        /* v2 += v3 */ {
+          $c0 = $v2[0] + $v3[0];
+          $c1 = $v2[1] + $v3[1] + ($c0 >> 24);
+          $c2 = $v2[2] + $v3[2] + ($c1 >> 24);
+          $v2 = array($c0 & 0xffffff, $c1 & 0xffffff, $c2 & 0xffff);
+        }
+        /* Rotl by 16 bits */ $v3 = array(
+          $v3[2] | (($v3[0] & 0xff) << 16),
+          ($v3[0] >> 8) | (($v3[1] & 0xff) << 16),
+          $v3[1] >> 8,
+        );
+        /* v3 ^= v2 */ $v3[0] ^= $v2[0]; $v3[1] ^= $v2[1]; $v3[2] ^= $v2[2];
+        /* v0 += v3 */ {
+          $c0 = $v0[0] + $v3[0];
+          $c1 = $v0[1] + $v3[1] + ($c0 >> 24);
+          $c2 = $v0[2] + $v3[2] + ($c1 >> 24);
+          $v0 = array($c0 & 0xffffff, $c1 & 0xffffff, $c2 & 0xffff);
+        }
+        /* Rotl by 21 bits */ $v3 = array(
+          ($v3[1] >> 19) | ($v3[2] << 5) | (($v3[0] & 0x7) << 21),
+          ($v3[0] >> 3) | (($v3[1] & 0x7) << 21),
+          ($v3[1] >> 3) & 0xffff,
+        );
+        /* v3 ^= v0 */ $v3[0] ^= $v0[0]; $v3[1] ^= $v0[1]; $v3[2] ^= $v0[2];
+        /* v2 += v1 */ {
+          $c0 = $v2[0] + $v1[0];
+          $c1 = $v2[1] + $v1[1] + ($c0 >> 24);
+          $c2 = $v2[2] + $v1[2] + ($c1 >> 24);
+          $v2 = array($c0 & 0xffffff, $c1 & 0xffffff, $c2 & 0xffff);
+        }
+        /* Rotl by 17 bits */ $v1 = array(
+          ($v1[1] >> 23) | ($v1[2] << 1) | (($v1[0] & 0x7f) << 17),
+          ($v1[0] >> 7) | (($v1[1] & 0x7f) << 17),
+          ($v1[1] >> 7) & 0xffff,
+        );
+        /* v1 ^= v2 */ $v1[0] ^= $v2[0]; $v1[1] ^= $v2[1]; $v1[2] ^= $v2[2];
+        /* Rotl by 32 bits */ $v2 = array(
+          ($v2[1] >> 8) | (($v2[2] & 0xff) << 16),
+          ($v2[2] >> 8) | (($v2[0] & 0xffff) << 8),
+          ($v2[0] >> 16) | (($v2[1] & 0xff) << 8),
+        );
       }
-    }
-
-    // Create 64 bits data
-    private static function u64($a) {
-      return array($a & 0xffff, ($a >> 16) & 0xffff, 0, 0);
-    }
-
-    // Left shift by 56 bits
-    private static function shl56($a) {
-      return array(0, 0, 0, ($a[0] << 8) & 0xffff);
-    }
-
-    private static function add_asgmt(&$a, $b) {
-      $c0 = $a[0] + $b[0];
-      $c1 = $a[1] + $b[1] + ($c0 >> 16);
-      $c2 = $a[2] + $b[2] + ($c1 >> 16);
-      $c3 = $a[3] + $b[3] + ($c2 >> 16);
-      $a = array($c0 & 0xffff, $c1 & 0xffff, $c2 & 0xffff, $c3 & 0xffff);
-    }
-
-    private static function or_asgmt(&$a, $b) {
-      $a[0] |= $b[0];
-      $a[1] |= $b[1];
-      $a[2] |= $b[2];
-      $a[3] |= $b[3];
-    }
-
-    private static function xor_asgmt(&$a, $b) {
-      $a[0] ^= $b[0];
-      $a[1] ^= $b[1];
-      $a[2] ^= $b[2];
-      $a[3] ^= $b[3];
-    }
-
-    // ------------------------------
-    // Rotl - Circular left shift
-    // ------------------------------
-
-    // Rotl by 0-15 bits
-    private static function rotl0_asgmt(&$a, $n = 0) {
-      $m = 16 - $n;
-      $a = array(
-        (($a[0] << $n) & 0xffff) | ($a[3] >> $m),
-        (($a[1] << $n) & 0xffff) | ($a[0] >> $m),
-        (($a[2] << $n) & 0xffff) | ($a[1] >> $m),
-        (($a[3] << $n) & 0xffff) | ($a[2] >> $m),
-      );
-    }
-
-    // Rotl by 16-31 bits
-    private static function rotl16_asgmt(&$a, $n = 0) {
-      $m = 16 - $n;
-      $a = array(
-        (($a[3] << $n) & 0xffff) | ($a[2] >> $m),
-        (($a[0] << $n) & 0xffff) | ($a[3] >> $m),
-        (($a[1] << $n) & 0xffff) | ($a[0] >> $m),
-        (($a[2] << $n) & 0xffff) | ($a[1] >> $m),
-      );
-    }
-
-    // Rotl by 32 bits
-    private static function rotl32_asgmt(&$a) {
-      $a = array($a[2], $a[3], $a[0], $a[1]);
     }
   }
 }
