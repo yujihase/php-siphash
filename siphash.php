@@ -1,7 +1,7 @@
 <?php
 
 /*!
- * siphash.php v1.0.2
+ * siphash.php v1.0.3
  *
  * © 2020 Yuji Hase
  *
@@ -13,7 +13,12 @@
 // SipHash
 // --------------------------------------------------
 
-if (PHP_INT_SIZE >= 8) {
+if (!defined('PHP_VERSION_ID')) {
+  $version = explode('.', PHP_VERSION);
+  define('PHP_VERSION_ID', ($version[0] * 10000 + $version[1] * 100 + $version[2]));
+}
+
+if (PHP_INT_SIZE == 8 && PHP_VERSION_ID >= 50603) {
   class SipHash {
     static function hash($length, $data, $key, $raw_output = false) {
 
